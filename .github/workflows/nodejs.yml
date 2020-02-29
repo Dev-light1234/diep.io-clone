@@ -26,9 +26,9 @@ jobs:
         node-version: ${{ matrix.node-version }}
     - name: Installing required packages
       run: npm install --no-fund
+    - name: Installing pkg
       run: npm install pkg -g
     - name: Running test build
-    - run: ls
       run: pkg /home/runner/work/diep.io-clone/diep.io-clone -d
       env:
         CI: true
