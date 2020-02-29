@@ -1,4 +1,4 @@
-name: Node.js CI
+name: Linux CI
 
 on:
   push:
@@ -13,10 +13,10 @@ jobs:
   build:
     runs-on: ${{ matrix.os }}
     strategy:
-      max-parallel: 6
+      max-parallel: 3
       matrix:
-        node-version: [12.x, 10.x]
-        os: [ubuntu-latest, windows-latest, macOS-latest]
+        node-version: [12.x, 10.x, 8.x]
+        os: [ubuntu-latest]
 
     steps:
     - uses: actions/checkout@v2
