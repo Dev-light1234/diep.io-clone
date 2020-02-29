@@ -1,7 +1,9 @@
-function DroneBullet(){
+function DroneBullet(radius,rotate){
   "use strict";
 
   DynamicObject.apply(this, arguments);
+  this.radius = radius;
+  this.rotate = rotate;
   this.color = new RGB(0,176,225);
   this.isDead = false;
   this.canvas = document.createElement("canvas");
@@ -18,7 +20,7 @@ function DroneBullet(){
       this.opacity = Math.max(this.opacity - 0.13 * tick * 0.05, 0);
       this.radius += 0.4 * tick * 0.05;
       if (this.opacity === 0){
-        system.removeObject(this.id,'bullet');
+        system.removeObject(this.id,'bul');
         return;
       }
     }
@@ -48,8 +50,8 @@ function DroneBullet(){
   this.setColor = function (color){
     this.color = color;
   }
-  this.dead = function(){
-    this.isDead = true;
+  this.setDead = function(dead){
+    this.isDead = dead;
   }
   this.hit = function(){
     this.hitTime=0.1;

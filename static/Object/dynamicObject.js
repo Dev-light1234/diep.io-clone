@@ -7,8 +7,8 @@ function DynamicObject(){
   this.dy=0.0;
   this.radius = 13.0;
   this.rotate=0;
-  this.maxHealth=10;
-  this.health=10;
+  this.maxHealth= 10;
+  this.health= 10;
   this.opacity=1;
   this.id;
 /*
@@ -39,6 +39,12 @@ function DynamicObject(){
   }
   this.setId = function(id){
     this.id = id;
+  }
+  this.isInCamera = function(camera){
+    return this.x > camera.x - 1280 / camera.z - this.radius &&
+        this.x < camera.x + 1280 / camera.z + this.radius &&
+        this.y > camera.y - 720 / camera.z - this.radius &&
+        this.y < camera.y + 720 / camera.z + this.radius;
   }
 }
 

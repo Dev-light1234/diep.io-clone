@@ -18,32 +18,31 @@ const shapeUtil = require('./lib/shapeSet');
 
 const quadtree = require('./lib/QuadTree');
 //const quadtree = require('simple-quadtree'); // 쿼드 트리 (충돌 감지)
-const {QuadTree, Box, Point, Circle} = require('js-quadtree');
 const readline = require('readline'); // 콘솔 창 명령어 실행 패키지
 
 let V = SAT.Vector;
 let C = SAT.Circle;
 
-let users = {}; // 유저 목록.
+var gameSet = {
+  gameMode: "sandbox",
+  maxPlayer: 50,
+  mapSize: {x: 322.5,y: 322.5}
+};
 
-let tanks = []; // 탱크 목록.
-let bullets = []; // 총알 목록.
-let shapes = []; // 도형 목록.
-
-let objects = []; // 오브젝트 목록.
-let aiObjects = []; // 플레이어가 조종할 수 없는 오브젝트 목록.
+let users = []; // 유저 목록.
+var objects = []; // 오브젝트 목록.
+var objID = (function(){ var id=1; return function(){ return id++;} })();
 
 let sockets = {}; // 유저 접속 목록.
 
-let mapSize = {x: 161.25,y: 161.25}; // 맵 크기.
 let tankLength = 53; // 탱크의 목록 길이.
 
-//let tree = quadtree(-mapSize.x,-mapSize.y,mapSize.x,mapSize.y,{ maxchildren: 25 });
-let tree = new QuadTree(new Box(-mapSize.x,-mapSize.y,mapSize.x,mapSize.y));
+let tree = new quadtree(-gameSet.mapSize.x,-gameSet.mapSize.y,gameSet.mapSize.x,gameSet.mapSize.y);
+//let tree = new QuadTree(new Box(-gameSet.mapSize.x,-gameSet.mapSize.y,gameSet.mapSize.x,gameSet.mapSize.y));
 
 app.use(express.static(__dirname + '/static')); // 클라이언트 코드 목록 불러오기.
 app.get('/', (req, res) => {
-  res.sendFile(__dirname + '/index.html');
+  res.sendFile(__dirname + '/static/index.html');
 })
 
 const rl = readline.createInterface({
@@ -63,9 +62,8 @@ recursiveAsyncReadLine();
 
 io.on('connection', (socket) => { // 접속.
   let currentPlayer = { // 현재 플레이어 객체 생성.
-    objType: 'player',
     id: socket.id, // 플레이어의 소켓 id
-    rotate: null,
+    moveRotate: null,
     mouse: {
       left: false,
       right: false
@@ -81,41 +79,17 @@ io.on('connection', (socket) => { // 접속.
     },
     k: false,
     o: false,
-    name: "",
     changeTank: false,
-    isChange: false,
-    controlTank: null
+    controlObject: null
   };
+  gameSet.mapSize.x+= 161.5;
+  gameSet.mapSize.y+= 161.5;
 
-  /*let currentTank = {
-    objType: 'tank',
-    id:socket.id,
-    x:0,
-    y:0,
-    w:10,
-    h:10,
-    dx:0,
-    dy:0,
-    level:1,
-    health:1,
-    maxHealth:48,
-    lastHealth:48,
-    damage:20,
-    radius:12.8,
-    rotate:0,
-    name:"",
-    sight:1.78,
-    guns:[],
-    stats:[0,0,0,0,0,0,0,0],
-    bulletCount:0,
-    type:12,
-    isCollision:false,
-    hitTime:Date.now(),
-    isDead:false
-  };*/
-  mapSize.x+= 161.25;
-  mapSize.y+= 161.25;
-  tree = new QuadTree(new Box(-mapSize.x,-mapSize.y,mapSize.x,mapSize.y));
+  shapeUtil.extendMaxShape(10);
+
+  tree = new quadtree(-gameSet.mapSize.x,-gameSet.mapSize.y,gameSet.mapSize.x,gameSet.mapSize.y);
+
+  io.emit('mapSize', gameSet.mapSize);
 
   socket.on('login', (name) => { // 탱크 생성.
     if (sockets[socket.id]){
@@ -123,70 +97,78 @@ io.on('connection', (socket) => { // 접속.
       return false;
     }
     else{
+      if (name.replace(/[\0-\x7f]|([0-\u07ff]|(.))/g,"$&$1$2").length > 15) {
+        name = '';
+        console.log('앗 무지개 방패로 이름 공격을 막았어요 :)');
+      }
       console.log('누군가가 들어왔다!!!');
-
-
-
-      //tree = quadtree(-mapSize.x,-mapSize.y,mapSize.x,mapSize.y,{ maxchildren: 25 });
-
-      shapeUtil.extendMaxShape(10);
-
       sockets[socket.id] = socket;
 
-      currentPlayer.name = name;
+      let obj = {
+        objType: 'tank', // 오브젝트 타입. tank, bullet, drone, shape, boss 총 5가지가 있다.
+        type: 0, // 오브젝트의 종류값.
+        owner: currentPlayer, // 오브젝트의 부모.
+        id: objID(), // 오브젝트의 고유 id.
+        team: -1, // 오브젝트의 팀값.
+        x: util.randomRange(-gameSet.mapSize.x,gameSet.mapSize.x), // 오브젝트의 좌표값.
+        y: util.randomRange(-gameSet.mapSize.y,gameSet.mapSize.y),
+        dx: 0.0, // 오브젝트의 속도값.
+        dy: 0.0,
+        level: 1, // 오브젝트의 레벨값.
+        exp: 0, // 오브젝트의 경험치값.
+        speed: function (){return (0.07 + (0.007 * obj.stats[7])) * Math.pow(0.985,obj.level-1);}, // (0.07+(0.007*speedStat))*0.0985^(level-1)
+        healthPer: 1, // 오브젝트의 이전 프레임 체력 비율값.
+        health: 50, // 오브젝트의 체력값.
+        maxHealth: function (){return 48 + obj.level * 2 + obj.stats[1] * 20;}, // 48+level*2+maxHealthStat*20
+        lastHealth: 48, // 오브젝트의 이전 프레임 체력값.
+        lastMaxHealth: 50, // 오브젝트의 이전 프레임 최대체력값.
+        damage: function (){return 20 + obj.stats[2] * 4;}, // 20+bodyDamageStat*4
+        radius: function (){return 13*Math.pow(1.01,(obj.level-1));}, // 12.9*1.01^(level-1)
+        rotate: 0, // 오브젝트의 방향값.
+        bound: 1, // 오브젝트의 반동값.
+        invTime: -1, // 오브젝트의 은신에 걸리는 시간.
+        opacity: 1, // 오브젝트의 투명도값.
+        name: name, // 오브젝트의 이름값.
+        sight: function (){return userUtil.setUserSight(obj);}, // 오브젝트의 시야값.
+        guns: [], // 오브젝트의 총구 목록.
+        stats: [0,0,0,0,0,0,0,0], // 오브젝트의 스탯값.
+        maxStats: [7,7,7,7,7,7,7,7], // 오브젝트의 최대 스탯값.
+        stat: 0, // 오브젝트의 남은 스탯값.
+        spawnTime: Date.now(), // 오브젝트의 스폰 시각.
+        hitTime: Date.now(), // 오브젝트의 피격 시각.
+        deadTime: -1, // 오브젝트의 죽은 시각.
+        hitObject: null, // 오브젝트의 피격 오브젝트.
+        moveAi: null, // 오브젝트의 이동 AI. 플레이어의 조종권한이 없을 때 실행하는 함수입니다.
+        event:{ // 여기 있는 값들은 모두 "함수" 입니다.
 
-      currentPlayer.controlTank = {
-        objType: 'tank',
-        owner: socket.id,
-        id: socket.id,
-        x: util.randomRange(-mapSize.x,mapSize.x),
-        y: util.randomRange(-mapSize.y,mapSize.y),
-        w: 10,
-        h: 10,
-        dx: 0,
-        dy: 0,
-        level: 9,
-        exp: 0,
-        health: 999999,//48,
-        maxHealth: 999999, //48,
-        lastHealth: 999999,//48,
-        damage: 20,
-        radius: 12.9,
-        rotate: 0,
-        bound: 0,
-        invTime: -1,
-        opacity: 1,
-        name: name,
-        sight: 1.78,
-        guns: [],
-        stats: [0,0,0,7,7,7,7,7],
-        maxStats: [7,7,7,7,7,7,7,7],
-        stat: 0,
-        type: 50,
-        isCanDir: true,
-        isCollision: false,
-        hitTime: Date.now(),
-        hitObject: this,
-        isDead: false
+        },
+        variable:{
+
+        },
+        isBorder : true, // 오브젝트가 맵 밖을 벗어날 수 없는가?
+        isCanDir: true, // 오브젝트의 방향을 조정할 수 있나?
+        isCollision: false, // 오브젝트가 충돌계산을 마쳤나?
+        isDead: false, // 오브젝트가 죽었나?
+        isShot: false,
+        isMove: false // 오브젝트가 현재 움직이는가?
       };
+      obj.team = obj.id;
 
-      userUtil.setUserTank(currentPlayer.controlTank);
+      currentPlayer.controlObject = obj;
 
-      users[socket.id] = currentPlayer;
-      tanks.push(currentPlayer.controlTank);
+      userUtil.setUserTank(currentPlayer.controlObject);
 
-      currentPlayer.controlTank.radius = Math.round(12.9*Math.pow(1.01,(currentPlayer.controlTank.level-1))*10)/10;
-      currentPlayer.controlTank.sight = userUtil.setUserSight(currentPlayer.controlTank);
-      socket.emit('spawn', currentPlayer.controlTank);
-      socket.emit('playerSet',{
-        level:currentPlayer.controlTank.level,
-        sight:currentPlayer.controlTank.sight,
-        isRotate:currentPlayer.controlTank.isCanDir,
-        stat:currentPlayer.controlTank.stat,
-        stats:currentPlayer.controlTank.stats,
-        maxStats:currentPlayer.controlTank.maxStats
+      users.push(currentPlayer);
+      objects.push(currentPlayer.controlObject);
+      socket.emit('spawn', {
+        id:currentPlayer.controlObject.id,
+        x:util.floor(currentPlayer.controlObject.x,2),
+        y:util.floor(currentPlayer.controlObject.y,2),
+        type:currentPlayer.controlObject.type,
+        name:currentPlayer.controlObject.name,
+        sight:util.floor(util.isF(currentPlayer.controlObject.sight),2)
       });
-      io.emit('mapSize', mapSize);
+      socket.emit('mapSize', gameSet.mapSize);
     }
   });
 
@@ -197,381 +179,349 @@ io.on('connection', (socket) => { // 접속.
 
   socket.on('mousemove', (data) => { // 마우스 좌표, 탱크의 방향
     if (!data) return; // null 값을 받으면 서버 정지
-
-    currentPlayer.target = data;
-
-    if (currentPlayer.controlTank && currentPlayer.controlTank.isCanDir){
-      currentPlayer.controlTank.rotate = Math.atan2(data.y-currentPlayer.controlTank.y,data.x-currentPlayer.controlTank.x);
+    if (currentPlayer.controlObject){
+      currentPlayer.target.x = data.x - currentPlayer.controlObject.x;
+      currentPlayer.target.y = data.y - currentPlayer.controlObject.y;
     }
   });
-
+/*
   socket.on('windowResized', (data) => {
     if (!data) return;
     currentPlayer.screenWidth = data.screenWidth;
     currentPlayer.screenHeight = data.screenHeight;
   });
+*/
+  socket.on('leftMouse', (data) => {
+    currentPlayer.mouse.left = data;
+  });
 
-  socket.on('input', (data) => { // 입력 정보
-    if (!data) return;
-    currentPlayer.rotate = data.moveRotate;
-    currentPlayer.k = data.k;
-    currentPlayer.mouse.right = data.rShot>0;
-    currentPlayer.mouse.left = data.shot>0 || data.autoE;
-    currentPlayer.o = data.o;
-    currentPlayer.changeTank = data.changeTank;
-    if (!data.changeTank && currentPlayer.isChange) currentPlayer.isChange = false;
+  socket.on('rightMouse', (data) => {
+    if (currentPlayer.controlObject && currentPlayer.controlObject.event){
+      if (!currentPlayer.mouse.right && data) currentPlayer.controlObject.event.rightDownEvent();
+      if (currentPlayer.mouse.right && !data) currentPlayer.controlObject.event.rightUpEvent();
+    }
+    currentPlayer.mouse.right = data;
+  });
+
+  socket.on('moveRotate', (data) => {
+    currentPlayer.moveRotate = data;
+  });
+
+  socket.on('keyK', (data) => {
+    currentPlayer.k = data;
+  });
+
+  socket.on('keyO', (data) => {
+    currentPlayer.o = data;
+  });
+
+  socket.on('changeTank', (data) => {
+    currentPlayer.changeTank = data;
+  });
+
+  socket.on('stat', (num) => {
+    if (currentPlayer.controlObject && currentPlayer.controlObject.stat>0 && currentPlayer.controlObject.stats[num]<currentPlayer.controlObject.maxStats[num]){
+      currentPlayer.controlObject.stats[num]++;
+      currentPlayer.controlObject.stat--;
+    }
   });
 
   socket.on('disconnect', () => { // 연결 끊김
     if (sockets[socket.id]){
       console.log('안녕 잘가!!!');
-      mapSize.x-= 161.25;
-      mapSize.y-= 161.25;
+      gameSet.mapSize.x+= 161.5;
+      gameSet.mapSize.y+= 161.5;
 
-      //tree = quadtree(-mapSize.x,-mapSize.y,mapSize.x,mapSize.y,{ maxchildren: 25 });
-      tree = new QuadTree(new Box(-mapSize.x,-mapSize.y,mapSize.x,mapSize.y));
+      tree = new quadtree(-gameSet.mapSize.x,-gameSet.mapSize.y,gameSet.mapSize.x,gameSet.mapSize.y);
 
       shapeUtil.extendMaxShape(-10);
 
-      delete users[socket.id];
+      currentPlayer.controlObject.owner = null;
+      users.splice(util.findIndex(users,currentPlayer.id),1);
 
-      io.emit('mapSize', mapSize);
+      io.emit('mapSize', gameSet.mapSize);
     }
   });
 });
 
-function collisionCheck(collision){ // 충돌 시 계산
-  let dir = Math.atan2(collision.aUser.y-collision.bUser.y,collision.aUser.x-collision.bUser.x);
+function collisionCheck(aUser,bUser){ // 충돌 시 계산
+  let dir = Math.atan2(aUser.y-bUser.y,aUser.x-bUser.x);
 
-  //collision.aUser.isCollision = collision.bUser.isCollision = true;
+  if (aUser === bUser.owner || bUser === aUser.owner) return;
 
-  collision.aUser.dx+=Math.cos(dir) * collision.aUser.bound;
-  collision.aUser.dy+=Math.sin(dir) * collision.aUser.bound;
-  collision.bUser.dx-=Math.cos(dir) * collision.bUser.bound;
-  collision.bUser.dy-=Math.sin(dir) * collision.bUser.bound;
+  aUser.dx+=Math.cos(dir) * aUser.bound;
+  aUser.dy+=Math.sin(dir) * aUser.bound;
+  bUser.dx-=Math.cos(dir) * bUser.bound;
+  bUser.dy-=Math.sin(dir) * bUser.bound;
 
-  if (collision.aUser.owner !== collision.bUser.owner){
-    io.emit('objectHit',collision.aUser.id,collision.aUser.objType);
-    io.emit('objectHit',collision.bUser.id,collision.bUser.objType);
+  if (aUser.team === bUser.team) return;
 
-    collision.aUser.hitTime = Date.now();
-    collision.bUser.hitTime = Date.now();
+  io.emit('objectHit',aUser.id,aUser.objType);
+  io.emit('objectHit',bUser.id,bUser.objType);
 
-    collision.aUser.hitObject = collision.bUser;
-    collision.bUser.hitObject = collision.aUser;
+  aUser.hitTime = Date.now();
+  bUser.hitTime = Date.now();
 
-    if (collision.bUser.lastHealth-collision.aUser.damage<=0){
-      collision.aUser.health-=collision.bUser.damage*(collision.bUser.lastHealth/collision.aUser.damage);
-    }
-    else{
-      collision.aUser.health-=collision.bUser.damage;
-    }
-    if (collision.aUser.lastHealth-collision.bUser.damage<=0){
-      collision.bUser.health-=collision.aUser.damage*(collision.aUser.lastHealth/collision.bUser.damage);
-    }
-    else{
-      collision.bUser.health-=collision.aUser.damage;
-    }
-  }
-}
+  aUser.hitObject = bUser;
+  bUser.hitObject = aUser;
 
-function tickPlayer(currentPlayer){ // 프레임 당 유저(탱크) 계산
-  let isMove = userUtil.moveUser(currentPlayer,mapSize,users[currentPlayer.id]);
-
-  for (let i=0;i<currentPlayer.guns.length;i++){
-    if (currentPlayer.guns[i].dir.rotate!==null){
-
-    }
-  }
-
-  let tankBullets = bulletUtil.bulletSet(currentPlayer,users[currentPlayer.id]);
-
-  bullets = bullets.concat(tankBullets[0]);
-
-  if (!currentPlayer.isCanDir){
-    currentPlayer.rotate+= 0.02;
-  }
-
-  if (tankBullets[1] || isMove || !users[currentPlayer.id] || currentPlayer.invTime===-1){
-    currentPlayer.opacity=Math.min(currentPlayer.opacity+0.1,1);
+  if (bUser.lastHealth-util.isF(aUser.damage)<=0){
+    aUser.health-=util.isF(bUser.damage)*(bUser.lastHealth/util.isF(aUser.damage));
   }
   else{
-    currentPlayer.opacity=Math.max(currentPlayer.opacity-1/60/currentPlayer.invTime,0);
+    aUser.health-=util.isF(bUser.damage);
   }
-
-  if (users[currentPlayer.id]){
-    userUtil.healTank(currentPlayer);
-    let sc = userUtil.setUserLevel(currentPlayer);
-    if (users[currentPlayer.id].k && currentPlayer.level<45){
-      currentPlayer.exp = sc;
-    }
-    if (users[currentPlayer.id].changeTank && !users[currentPlayer.id].isChange){
-      currentPlayer.type = currentPlayer.type==0?tankLength-1:currentPlayer.type-1;
-      userUtil.setUserTank(currentPlayer);
-      users[currentPlayer.id].isChange = true;
-    }
-    let healthPer = currentPlayer.health / currentPlayer.maxHealth;
-    currentPlayer.maxHealth = 48 + currentPlayer.level * 2 + currentPlayer.stats[1] * 20;
-    currentPlayer.health = currentPlayer.maxHealth / healthPer;
-
-    currentPlayer.damage = 20 + currentPlayer.stats[2] * 4 + (currentPlayer.type===49) * 8;
-
-    currentPlayer.radius = Math.round(12.9*Math.pow(1.01,(currentPlayer.level-1))*10)/10;
-    currentPlayer.sight = userUtil.setUserSight(currentPlayer);
-    if (users[currentPlayer.id].o){
-      currentPlayer.hitObject = currentPlayer;
-      currentPlayer.health=0;
-    }
-    sockets[currentPlayer.id].emit('playerSet',{
-      level:currentPlayer.level,
-      sight:currentPlayer.sight,
-      isRotate:currentPlayer.isCanDir,
-      stat:currentPlayer.stat,
-      stats:currentPlayer.stats,
-      maxStats:currentPlayer.maxStats
-    });
+  if (aUser.lastHealth-util.isF(bUser.damage)<=0){
+    bUser.health-=util.isF(aUser.damage)*(aUser.lastHealth/util.isF(bUser.damage));
   }
-  else userUtil.afkTank(currentPlayer);
-
-  currentPlayer.lastHealth = currentPlayer.health; // lastHealth 는 데미지 계산 당시에 사용할 이전 체력 값이다. 이 값이 없다면 데미지 계산을 제대로 하지 못한다.
-
-  function check(obj){ // 충돌했는가?
-    if ((!obj.owner || obj.owner !== currentPlayer.id) && obj.id !== currentPlayer.id && (!currentPlayer.isCollision && !obj.isCollision)){
-      let response = new SAT.Response();
-      let collided = SAT.testCircleCircle(playerCircle,
-      new C(new V(obj.x,obj.y),obj.radius),response);
-
-      if (collided){
-        response.aUser = currentPlayer;
-        response.bUser = obj;
-        playerCollisions.push(response);
-      }
-    }
-
-    return true;
+  else{
+    bUser.health-=util.isF(aUser.damage);
   }
-
-  var playerCircle = new C(new V(currentPlayer.x,currentPlayer.y),currentPlayer.radius);
-
-  //tree.clear();
-  /*tanks.forEach(tree.put);
-  bullets.forEach(tree.put);
-  shapes.forEach(tree.put);
-  var playerCollisions = [];
-
-  //tree.get(currentPlayer,check);
-
-  playerCollisions.forEach(collisionCheck);*/
 }
 
-function tickBullet(currentBullet){ // 프레임 당 총알 계산
-  let target = undefined;
-  if (currentBullet.type>=2) target = detectObject(currentBullet,500,0,Math.PI);
-  bulletUtil.moveBullet(currentBullet,mapSize,users[currentBullet.owner],target);
+function tickPlayer(p){ // 플레이어를 기준으로 반복되는 코드입니다.
+  if (p.controlObject && !p.controlObject.isDead){
+    p.camera.x = p.controlObject.x;
+    p.camera.y = p.controlObject.y;
 
-  if (currentBullet.guns){
-    bullets = bullets.concat(bulletUtil.bulletbulletSet(currentBullet,users[currentBullet.owner]));
-  }
-
-  currentBullet.lastHealth = currentBullet.health;
-
-  function check(obj){ // 충돌했는가?
-    if ((!obj.owner || obj.owner !== currentBullet.owner || (obj.isOwnCol && currentBullet.isOwnCol))
-    && obj.id !== currentBullet.owner
-    && obj.id !== currentBullet.id
-    && (!currentBullet.isCollision && !obj.isCollision)){
-      let response = new SAT.Response();
-      let collided = SAT.testCircleCircle(bulletCircle,
-      new C(new V(obj.x,obj.y),obj.radius),response);
-
-      if (collided){
-        response.aUser = currentBullet;
-        response.bUser = obj;
-        bulletCollisions.push(response);
+    if (p.controlObject.sight)
+      p.camera.z = util.isF(p.controlObject.sight);
+    else
+      p.camera.z = 1;
+    if (p.controlObject.event){
+      if (p.controlObject.event.rightEvent && p.mouse.right){
+        p.controlObject.event.rightEvent();
       }
     }
-
-    return true;
-  }
-
-  var bulletCircle = new C(new V(currentBullet.x,currentBullet.y),currentBullet.radius);
-
-  /*tree.clear();
-  bullets.forEach(tree.put);
-  shapes.forEach(tree.put);
-  var bulletCollisions = [];
-
-  tree.get(currentBullet,check);
-
-  bulletCollisions.forEach(collisionCheck);*/
-
-  if (currentBullet.time > 0) currentBullet.time = Math.max(currentBullet.time - 1000/60, 0); // 수명
-}
-
-function tickShape(currentShape){
-  shapeUtil.moveShape(currentShape,mapSize,users[currentShape.owner],detectObject(currentShape,500,0,Math.PI));
-
-  currentShape.lastHealth = currentShape.health;
-
-  function check(obj){ // 충돌했는가?
-    if (obj.id !== currentShape.id
-    && (!currentShape.isCollision && !obj.isCollision)){
-      let response = new SAT.Response();
-      let collided = SAT.testCircleCircle(shapeCircle,
-      new C(new V(obj.x,obj.y),obj.radius),response);
-
-      if (collided){
-        response.aUser = currentShape;
-        response.bUser = obj;
-        shapeCollisions.push(response);
-      }
+    if (p.moveRotate === null){
+      p.controlObject.isMove = false;
+    }
+    else{
+      p.controlObject.dx += Math.cos(p.moveRotate) * util.isF(p.controlObject.speed);
+      p.controlObject.dy += Math.sin(p.moveRotate) * util.isF(p.controlObject.speed);
+      p.controlObject.isMove = true;
+    }
+    if (p.controlObject.isCanDir){
+      p.controlObject.rotate = Math.atan2(p.target.y,p.target.x);
     }
 
-    return true;
+    if (gameSet.gameMode === "sandbox"){
+      if (p.o){
+        p.controlObject.hitObject = p.controlObject;
+        p.controlObject.health=0;
+      }
+    }
   }
-
-  var shapeCircle = new C(new V(currentShape.x,currentShape.y),currentShape.radius);
-/*
-  tree.clear();
-  shapes.forEach(tree.put);
-  var shapeCollisions = [];
-
-  //tree.get(currentShape,check);
-
-  shapeCollisions.forEach(collisionCheck);*/
 }
 
-function detectObject(object,r,rotate,dir){
-  //tree.clear();
-  /*tanks.forEach(tree.put);
-  shapes.forEach(tree.put);*/
-  let collisionsObject = undefined;
-  let dist = r+1;
+function tickObject(obj){
+  objUtil.moveObject(obj);
 
-  function check(obj){
-    if (object.id !== obj.id && object.owner !== obj.id && (!obj.owner || obj.objType === "tank") && !obj.isDead){
-      let response = new SAT.Response();
-      let collided = SAT.testCircleCircle(new C(new V(object.x,object.y),r),
-      new C(new V(obj.x,obj.y),obj.radius),response);
-      if (collided){
-        let angle = Math.atan2(obj.y-object.y,obj.x-object.x);
-        let a = -((Math.cos(rotate)*Math.cos(angle)) + (Math.sin(rotate)*Math.sin(angle))-1) * Math.PI / 2;
-        let dis = Math.sqrt((obj.x-object.x)*(obj.x-object.x)+(obj.y-object.y)*(obj.y-object.y));
-        if (a<=dir && dist>dis){
-          collisionsObject = obj;
-          dist = dis;
+  if (obj.isBorder){ // 화면 밖으로 벗어나는가?
+    if (obj.x>gameSet.mapSize.x+51.6) obj.x=gameSet.mapSize.x+51.6;
+    if (obj.x<-gameSet.mapSize.x-51.6) obj.x=-gameSet.mapSize.x-51.6;
+    if (obj.y>gameSet.mapSize.y+51.6) obj.y=gameSet.mapSize.y+51.6;
+    if (obj.y<-gameSet.mapSize.y-51.6) obj.y=-gameSet.mapSize.y-51.6;
+  }
+  if (obj.health<=0){
+    obj.isDead = true;
+  }
+  if (obj.moveAi){
+    obj.moveAi(obj);
+  }
+  if (obj.isDead) return;
+
+  if (obj.guns){
+    bulletUtil.gunSet(objects,obj,objID,io);
+  }
+
+  tree.retrieve(obj).forEach((u) => {
+    let res = new SAT.Response();
+    let isCol = SAT.testCircleCircle(new C(new V(obj.x,obj.y),util.isF(obj.radius)),new C(new V(u.x,u.y),util.isF(u.radius)),res);
+    if (isCol){
+      collisionCheck(obj,u);
+    }
+  });
+
+  tree.insert(obj);
+
+  switch (obj.objType){
+    case "tank":
+    let sc = userUtil.setUserLevel(obj);
+    if (!obj.isCanDir){ // 방향 조정이 불가능할 때 방향 회전
+      obj.rotate += 0.02;
+    }
+    if (obj.lastMaxHealth !== util.isF(obj.maxHealth)){
+      obj.healthPer = obj.health / obj.lastMaxHealth;
+      obj.health = util.isF(obj.maxHealth) / obj.healthPer;
+      obj.lastMaxHealth = util.isF(obj.maxHealth);
+    }
+    if (obj.owner){
+      if (gameSet.gameMode === "sandbox"){
+        if (obj.owner.k && obj.level<45){
+          obj.exp = sc;
+        }
+        if (obj.owner.changeTank){
+          obj.type = obj.type==0?tankLength-1:obj.type-1;
+          userUtil.setUserTank(obj);
+          obj.owner.changeTank = false;
         }
       }
+      userUtil.healTank(obj);
     }
-
-    return true;
+    else{
+      userUtil.afkTank(obj);
+    }
+    break;
+    case "bullet":
+    obj.time-=1000/60;
+    obj.isOwnCol=Math.max(obj.isOwnCol-1000/60,0);
+    if (obj.time<=0){
+      obj.isDead = true;
+    }
+    break;
+    case "drone":
+    break;
+    case "shape":
+    objUtil.healObject(obj);
+    break;
+    default:
+    break;
   }
 
-  //tree.get(object,check);
+  if (obj.isMove || obj.isShot || obj.invTime<0){
+    obj.opacity=Math.min(obj.opacity+0.1,1);
+  }
+  else{
+    obj.opacity=Math.max(obj.opacity-1/60/obj.invTime,0);
+  }
 
-  return collisionsObject;
+  obj.lastHealth = obj.health; // lastHealth 는 데미지 계산 당시에 사용할 이전 체력 값이다. 이 값이 없다면 데미지 계산을 제대로 하지 못한다.
 }
 
 function moveloop(){
-  //console.time();
-  tanks.forEach((u) => {
+  tree.clear();
+  users.forEach((u) => {
     tickPlayer(u);
   });
-  bullets.forEach((b) => {
-    tickBullet(b);
+  shapeUtil.spawnShape(objects,gameSet.mapSize,objID);
+  objects.forEach((o) => {
+    tickObject(o);
   });
-  shapes = shapes.concat(shapeUtil.spawnShape(mapSize));
-  shapes.forEach((s) => {
-    tickShape(s);
-  });
-  tanks.forEach((u)=>{
-    if (userUtil.isDeadPlayer(u,tanks)){
-      io.emit('objectDead',u.id,"tank");
+  objects.forEach((o) => {
+    if (o.isDead){
+      if (o.deadTime===-1){
+        if (o.hitObject && o.hitObject.event){
+          if (o.hitObject.event.killEvent) o.hitObject.event.killEvent(o);
+        }
+        if (o.event){
+          if (o.event.deadEvent) o.event.deadEvent(o.hitObject);
+        }
+        o.deadTime=1000;
+        for (let i=0;i<o.guns.length;i++){
+          if (!o.guns[i]) continue;
+          for (let j=0;j<o.guns[i].bullets.length;j++){
+            o.guns[i].bullets[j].isDead = true;
+          }
+        }
+      }
+      else if (o.deadTime<0){
+        objects.splice(util.findIndex(objects,o.id),1);
+      }
+      else{
+        o.deadTime-=1000/60;
+      }
     }
   });
-  bullets.forEach((b)=>{
-    if (bulletUtil.isDeadBullet(b,bullets)){
-      io.emit('objectDead',b.id,"bullet");
-    }
-  });
-  shapes.forEach((s)=>{
-    if (shapeUtil.isDeadShape(s,shapes)){
-      io.emit('objectDead',s.id,"shape");
-    }
-  });
-  //console.timeEnd();
 }
 
 function sendUpdates(){
-  //console.time();
-  for (let key in users){
-    if (users[key].controlTank){
-      users[key].camera.x = users[key].controlTank.x;
-      users[key].camera.y = users[key].controlTank.y;
+  var scoreBoardList=objects.map(function(f)
+  {
+    switch (f.objType){
+      case "tank":
+      if(!f.isDead)
+      {
+        return {
+          type:f.type,
+          score:f.exp,
+          name:f.name,
+          isDead:f.isDead
+        };
+      }
+      default:
     }
-    let u = users[key];
-    let visibleTank  = tanks
+  }).filter(function(f) { return f; }).sort(function(a,b)
+  {
+      return Math.sign(b.score-a.score);
+  }).slice(0,10);
+  users.forEach((u) => {
+    let visibleObject  = objects
             .map(function(f) {
-                if ( f.x > u.camera.x - u.screenWidth/2 - f.radius &&
-                    f.x < u.camera.x + u.screenWidth/2 + f.radius &&
-                    f.y > u.camera.y - u.screenHeight/2 - f.radius &&
-                    f.y < u.camera.y + u.screenHeight/2 + f.radius && (f.opacity > 0 || f.id === key)) {
-                    return {
-                      id:f.id,
-                      x:util.floor(f.x,2),
-                      y:util.floor(f.y,2),
-                      radius:util.floor(f.radius,1),
-                      rotate:util.floor(f.rotate,2),
-                      health:util.floor(f.health,1),
-                      maxHealth:util.floor(f.maxHealth,1),
-                      opacity:util.floor(f.opacity,2),
-                      type:f.type,
-                      score:f.exp,
-                      name:f.name
-                    };
+                if ( f.x > u.camera.x - 1280 / u.camera.z - util.isF(f.radius) &&
+                    f.x < u.camera.x + 1280 / u.camera.z + util.isF(f.radius) &&
+                    f.y > u.camera.y - 720 / u.camera.z - util.isF(f.radius) &&
+                    f.y < u.camera.y + 720 / u.camera.z + util.isF(f.radius) && f.opacity > 0) {
+                    switch (f.objType){
+                      case "tank":
+                      return {
+                        objType:"tank",
+                        id:f.id,
+                        x:util.floor(f.x,2),
+                        y:util.floor(f.y,2),
+                        radius:util.floor(util.isF(f.radius),1),
+                        rotate:util.floor(f.rotate,2),
+                        maxHealth:util.floor(f.lastMaxHealth,1),
+                        health:util.floor(f.health,1),
+                        opacity:util.floor(f.opacity,2),
+                        type:f.type,
+                        score:f.exp,
+                        name:f.name,
+                        isDead:f.isDead
+                      };
+                      case "bullet":
+                      case "drone":
+                      return {
+                        objType:f.objType,
+                        id:f.id,
+                        x:util.floor(f.x,2),
+                        y:util.floor(f.y,2),
+                        radius:util.floor(util.isF(f.radius),1),
+                        rotate:util.floor(f.rotate,2),
+                        type:f.type,
+                        owner:f.owner.id,
+                        isDead:f.isDead
+                      };
+                      case "shape":
+                      return {
+                        objType:"shape",
+                        id:f.id,
+                        x:util.floor(f.x,2),
+                        y:util.floor(f.y,2),
+                        radius:util.floor(util.isF(f.radius),1),
+                        rotate:util.floor(f.rotate,2),
+                        maxHealth:util.floor(util.isF(f.maxHealth),1),
+                        health:util.floor(f.health,1),
+                        type:f.type,
+                        isDead:f.isDead
+                      };
+                      default:
+                      return {};
+                    }
                 }
             })
             .filter(function(f) { return f; });
-    let visibleBullet  = bullets
-            .map(function(f) {
-                if ( f.x > u.camera.x - u.screenWidth/2 - f.radius &&
-                    f.x < u.camera.x + u.screenWidth/2 + f.radius &&
-                    f.y > u.camera.y - u.screenHeight/2 - f.radius &&
-                    f.y < u.camera.y + u.screenHeight/2 + f.radius) {
-                    return {
-                      id:f.id,
-                      x:util.floor(f.x,2),
-                      y:util.floor(f.y,2),
-                      radius:util.floor(f.radius,1),
-                      rotate:util.floor(f.rotate,2),
-                      type:f.type,
-                      owner:f.owner
-                    };
-                }
-            })
-            .filter(function(f) { return f; });
-    let visibleShape  = shapes
-            .map(function(f) {
-                if ( f.x > u.camera.x - u.screenWidth/2 - f.radius &&
-                    f.x < u.camera.x + u.screenWidth/2 + f.radius &&
-                    f.y > u.camera.y - u.screenHeight/2 - f.radius &&
-                    f.y < u.camera.y + u.screenHeight/2 + f.radius) {
-                    return {
-                      id:f.id,
-                      x:util.floor(f.x,2),
-                      y:util.floor(f.y,2),
-                      radius:util.floor(f.radius,1),
-                      rotate:util.floor(f.rotate,2),
-                      health:util.floor(f.health,1),
-                      maxHealth:util.floor(f.maxHealth,1),
-                      type:f.type
-                    };
-                }
-            })
-            .filter(function(f) { return f; });
-    sockets[key].emit('objectList',visibleTank,visibleBullet,visibleShape);
-  }
-  //console.timeEnd();
+    sockets[u.id].emit('objectList',visibleObject);
+    sockets[u.id].emit('playerSet',{
+      level:u.controlObject.level,
+      camera:u.camera,
+      isRotate:u.controlObject.isCanDir,
+      stat:u.controlObject.stat,
+      stats:u.controlObject.stats,
+      maxStats:u.controlObject.maxStats
+    });
+    sockets[u.id].emit('scoreboardlist',scoreBoardList);
+  });
 }
 
 setInterval(moveloop,1000/60);

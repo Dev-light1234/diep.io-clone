@@ -1,7 +1,9 @@
-function BasicBullet(){
+function BasicBullet(radius,rotate){
   "use strict";
 
   DynamicObject.apply(this, arguments);
+  this.radius = radius;
+  this.rotate = rotate;
   this.color = new RGB(0,176,225);
   this.isDead = false;
   this.canvas = document.createElement("canvas");
@@ -9,11 +11,11 @@ function BasicBullet(){
   this.canvasSize = {x:0,y:0};
   this.canvasPos = {x:0,y:0};
   this.animate = function(tick){
-    if (this.isDead || this.health<0 || this.time<0){
+    if (this.isDead){
       this.opacity = Math.max(this.opacity - 0.13 * tick * 0.05, 0);
       this.radius += 0.4 * tick * 0.05;
       if (this.opacity === 0){
-        system.removeObject(this.id,'bullet');
+        system.removeObject(this.id,'bul');
         return;
       }
     }
@@ -21,10 +23,13 @@ function BasicBullet(){
   this.setColor = function (color){
     this.color = color;
   }
-  this.dead = function(){
-    this.isDead = true;
+  this.setDead = function(dead){
+    this.isDead = dead;
   }
   this.hit = function(){
+
+  }
+  this.gunAnime = function(gun){
 
   }
   this.setCanvasSize = function(camera){

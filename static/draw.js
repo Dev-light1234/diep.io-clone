@@ -36,7 +36,11 @@ function DrawObject(camera){ // 그리기 담당
   }
 
   this.getCameraSet = function (){
-    return this.camera;
+    return {
+      x:this.camera.x + this.canvas.width / 2 / this.camera.uiz / this.sight,
+      y:this.camera.y + this.canvas.height / 2 / this.camera.uiz / this.sight,
+      z:this.camera.z,
+    }
   }
 
   this.setSight = function(sight){
@@ -61,21 +65,17 @@ function DrawObject(camera){ // 그리기 담당
 
   this.im = {x:0,y:0};
 
-  this.cameraSet = function (tank){
+  this.cameraSet = function (camera){
     if (this.canvas.width<this.canvas.height/9*16) this.camera.z=this.canvas.height/900; // 화면 크기에 따른 줌값 조정
     else this.camera.z=this.canvas.width/1600;
 
     this.camera.uiz = this.camera.z; // *1.78 은 1레벨 탱크의 시야 *1.43 은 45레벨 탱크의 시야 *1.229 는 75레벨 탱크의 시야
 
     this.camera.z *= this.showSight;
-    this.showSight -= (this.showSight - this.sight) / 20;
+    this.showSight -= (this.showSight - this.sight) / 10;
 
-    if (tank){
-      //this.camera.x-= (this.camera.x - (tank.x-this.canvas.width/2/this.camera.z)) / 20;
-      //this.camera.y-= (this.camera.y - (tank.y-this.canvas.height/2/this.camera.z)) / 20;
-      this.camera.x = (tank.x-this.canvas.width/2/this.camera.z);
-      this.camera.y = (tank.y-this.canvas.height/2/this.camera.z);
-    }
+    this.camera.x-= (this.camera.x - camera.x + this.canvas.width / 2 / this.camera.uiz / this.sight) / 10;
+    this.camera.y-= (this.camera.y - camera.y + this.canvas.height / 2 / this.camera.uiz / this.sight) / 10;
   }
 
   this.backgroundDraw = function (){
@@ -136,7 +136,7 @@ function DrawObject(camera){ // 그리기 담당
       ui[i].draw(this.uiCtx,this.camera.uiz);
     }
 
-    this.ctx.globalAlpha = 0.82;
+    this.ctx.globalAlpha = 0.7;
     this.ctx.drawImage(this.uiCanvas,0,0);
   }
 
@@ -223,16 +223,16 @@ function Button(text){
   }
 }
 
-function Bar(){
+function Bar(c,radius){
   "use strict";
 
   this.x1;
   this.x2;
   this.y;
   this.percent;
-  this.radius;
+  this.radius=radius;
 
-  this.color = new RGB(0,0,0);
+  this.color = c||new RGB(0,0,0);
 
   this.setPosition = function (x1,x2,y,p){
     this.x1 = x1;
@@ -244,31 +244,47 @@ function Bar(){
   this.setRadius = function (r){
     this.radius = r;
   }
+  
+  this.setColor = function (c)
+  {
+    this.color = c;
+  };
 
   this.inMousePoint = function (x,y){
     return false;
   }
 
   this.draw = function (ctx,z){
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
     ctx.beginPath();
-    ctx.fillStyle = this.color.getRGBValue();
-    ctx.strokeStyle = "#000000";
-
-    ctx.fill();
-    ctx.stroke();
+    ctx.moveTo(this.x1,this.y+this.radius/2*z);
+    ctx.lineTo(this.x2,this.y+this.radius/2*z);
     ctx.closePath();
+    ctx.strokeStyle = "#000000";
+    ctx.lineWidth=this.radius/2*z;
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(this.x1,this.y+this.radius/2*z);
+    ctx.lineTo(this.x1 + (this.x2 - this.x1) * this.percent,this.y+this.radius/2*z);
+    ctx.closePath();
+    ctx.lineWidth=this.radius/2.7*z;
+    ctx.strokeStyle = this.color.getRGBValue();
+    ctx.stroke();
   }
 }
 
-function Text(text,size,rotate){
+function Text(text,size,rotate,align,enable){
   "use strict";
 
   this.text = text;
   this.size = size;
   this.x;
   this.y;
-  this.align = "center";
+  this.align = align || "center";
   this.rotate = rotate || 0;
+  this.enable = enable || enable === undefined;
 
   this.inMousePoint = function (x,y){
     return false;
@@ -277,7 +293,11 @@ function Text(text,size,rotate){
   this.setPosition = function (x,y,rotate){
     this.x = x;
     this.y = y;
-    this.rotate = rotate;
+    this.rotate = rotate || this.rotate;
+  }
+
+  this.setEnable = function (b){
+    this.enable = b;
   }
 
   this.setText = function (text){
@@ -289,17 +309,141 @@ function Text(text,size,rotate){
   }
 
   this.draw = function (ctx,z){
-    ctx.save();
-    ctx.fillStyle = "#ffffff";
-    ctx.strokeStyle = "#000000";
-    ctx.lineWidth = 5 * z;
-    ctx.translate(this.x,this.y);
-    ctx.rotate(this.rotate);
-    ctx.textAlign = this.align;
-    ctx.font = "bold " + this.size * z + "px Ubuntu";
+    if (this.enable){
+      ctx.save();
+      ctx.fillStyle = "#ffffff";
+      ctx.strokeStyle = "#000000";
+      ctx.lineWidth = this.size * 0.2 * z;
+      ctx.translate(this.x,this.y);
+      ctx.rotate(this.rotate);
+      ctx.textAlign = this.align;
+      ctx.lineCap = "butt";
+      ctx.lineJoin = "miter";
+      ctx.font = this.size * z + "px Ubuntu";
 
-    ctx.strokeText(this.text,0,0);
-    ctx.fillText(this.text,0,0);
-    ctx.restore();
+      ctx.strokeText(this.text,0,0);
+      ctx.fillText(this.text,0,0);
+      ctx.restore();
+    }
   }
+}
+
+function MiniMap(){
+  "use strict";
+
+  this.x;
+  this.y;
+  this.pointX;
+  this.pointY;
+  this.pointRotate;
+  this.color = new RGB(205,205,205);
+  this.borderColor = new RGB(87,87,87);
+  this.miniMapSize = 146;
+  this.border = 4.5;
+  this.point=[
+    [-3,-2.5],
+    [4,0],
+    [-3,2.5]
+  ].map((a)=>[Math.sqrt(Math.pow(a[0],2)+Math.pow(a[1],2)),Math.atan2(a[1],a[0])]);
+
+  this.setPosition = function (x,y){
+    this.x = x;
+    this.y = y;
+  };
+
+  this.setPointPosition = function (x,y,rotate){
+    this.pointX = x*this.miniMapSize+this.border;
+    this.pointY = y*this.miniMapSize+this.border;
+    this.pointRotate = rotate;
+  };
+
+  this.drawPoint=function(ctx,i,z,start)
+  {
+    var x=this.x + (this.pointX+this.point[i][0]*Math.cos(this.pointRotate+this.point[i][1]) - this.miniMapSize)*z;
+    var y=this.y + (this.pointY+this.point[i][0]*Math.sin(this.pointRotate+this.point[i][1]) - this.miniMapSize)*z;
+    if(start)
+      ctx.moveTo(x,y);
+    else
+      ctx.lineTo(x,y);
+  }
+
+  this.draw = function (ctx,z){
+
+    ctx.fillStyle = this.color.getRGBValue();
+    ctx.strokeStyle = this.borderColor.getRGBValue();
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.lineWidth = this.border * z;
+    ctx.beginPath();
+    ctx.rect(this.x - this.miniMapSize * z + 4 * z,this.y - this.miniMapSize  * z + 4 * z,this.miniMapSize * z,this.miniMapSize * z);
+    ctx.fill();
+
+    ctx.save();
+
+    ctx.clip();
+
+    ctx.fillStyle = '#000000';
+    ctx.beginPath();
+    for(var i=0;i<this.point.length+1;i++)
+      this.drawPoint(ctx,i%this.point.length,z,i==0);
+    ctx.fill();
+
+    ctx.restore();
+
+    ctx.beginPath();
+    ctx.rect(this.x - this.miniMapSize * z + 4 * z,this.y - this.miniMapSize * z + 4 * z,this.miniMapSize * z,this.miniMapSize * z);
+    ctx.stroke();
+  };
+
+  this.inMousePoint = function (x,y){
+    return false;
+  };
+}
+
+function ScoreBoard()
+{
+  this.x;
+  this.y;
+  
+  this.width=167;
+  
+  this.scoreBoardTitle=new Text("Scoreboard",20);
+  this.scoreBoardBar=[];
+  this.scoreBoardText=[];
+  this.scoreBoardList=[];
+  
+  for(let i=0;i<10;i++)
+  {
+    this.scoreBoardBar[i]=new Bar(new RGB(66,255,145),33);
+    this.scoreBoardText[i]=new Text("",13);
+  }
+  
+  this.setPosition = function (x,y,z,a){
+    this.x = x;
+    this.y = y;
+    
+    this.scoreBoardList=a;
+    
+    this.scoreBoardTitle.setPosition(x,y);
+    
+    for(var i=0;i<this.scoreBoardList.length;i++)
+    {
+      this.scoreBoardBar[i].setPosition(x-this.width/2*z,x+this.width/2*z,y+(5+20*i)*z,this.scoreBoardList[i].score/this.scoreBoardList[0].score);
+      this.scoreBoardText[i].setText(this.scoreBoardList[i].name+' - '+String(this.scoreBoardList[i].score));
+      this.scoreBoardText[i].setPosition(x,y+(25+20*i)*z);
+    }
+  }
+
+  this.draw = function (ctx,z){
+    this.scoreBoardTitle.draw(ctx,z);
+    for(var i=0;i<this.scoreBoardList.length;i++)
+    {
+      this.scoreBoardBar[i].draw(ctx,z);
+      this.scoreBoardText[i].draw(ctx,z);
+    }
+  };
+
+  this.inMousePoint = function (x,y){
+    return false;
+  };
 }

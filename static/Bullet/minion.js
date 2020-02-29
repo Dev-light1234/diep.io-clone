@@ -1,7 +1,9 @@
-function Minion(){
+function Minion(radius,rotate){
   "use strict";
 
   DynamicObject.apply(this, arguments);
+  this.radius = radius;
+  this.rotate = rotate;
   this.guns = [new Gun([[0,0],[0.5,0],[0.5,1.7],[-0.5,1.7],[-0.5, 0]],0)];
   this.color = new RGB(0,176,225);
   this.isDead = false;
@@ -9,6 +11,7 @@ function Minion(){
   this.ctx = this.canvas.getContext('2d');
   this.canvasSize = {x:0,y:0};
   this.canvasPos = {x:0,y:0};
+  this.imRotate = this.rotate;
   this.hitTime = 0;
   this.r = 0;
   this.w = -0.0001;
@@ -19,7 +22,7 @@ function Minion(){
       this.opacity = Math.max(this.opacity - 0.13 * tick * 0.05, 0);
       this.radius += 0.4 * tick * 0.05;
       if (this.opacity == 0){
-        system.removeObject(this.id,'bullet');
+        system.removeObject(this.id,'bul');
         return;
       }
     }
@@ -41,16 +44,27 @@ function Minion(){
       this.guns[i].animate();
     }
     this.showRadius -= (this.showRadius - this.radius) / 3;
+
+    let ccw = Math.cos(this.rotate)*Math.sin(this.imRotate)-Math.sin(this.rotate)*Math.cos(this.imRotate);
+    let a = -((Math.cos(this.rotate)*Math.cos(this.imRotate)) + (Math.sin(this.rotate)*Math.sin(this.imRotate))-1) * Math.PI / 2;
+
+    if (ccw > 0){
+      this.imRotate-= a / 3;
+    } else if (ccw < 0){
+      this.imRotate+= a / 3;
+    }
   }
   this.setColor = function (color){
     this.color = color;
   }
-  this.dead = function(){
-    this.isDead = true;
-    this.health = 0;
+  this.setDead = function(dead){
+    this.isDead = dead;
   }
   this.hit = function(){
     this.hitTime=0.1;
+  }
+  this.gunAnime = function(gun){
+    if (gun<this.guns.length) this.guns[gun].shot();
   }
   this.setCanvasSize = function(camera){
     let xx = ((this.x - this.dx - camera.x) * camera.z) - Math.floor((this.x - this.dx - camera.x) * camera.z);

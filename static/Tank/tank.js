@@ -1,7 +1,9 @@
-function Tank(){
+function Tank(radius,rotate){
   "use strict";
 
   HealthShowObject.apply(this, arguments);
+  this.radius = radius || 13;
+  this.rotate = rotate || 0;
   this.tankType = null;
   this.guns = [];
   this.afterGuns = [];
@@ -16,6 +18,7 @@ function Tank(){
   this.canvasPos = {x:0,y:0};
   this.bodyVertex = 0;
   this.bodySize = 1;
+  this.imRotate = this.rotate;
   this.hitTime = 0;
   this.r = 0;
   this.w = -0.0001;
@@ -25,8 +28,8 @@ function Tank(){
     if (this.isDead){
       this.opacity = Math.max(this.opacity - 0.13 * tick * 0.05, 0);
       this.radius += 0.4 * tick * 0.05;
-      if (this.opacity == 0){
-        system.removeObject(this.id,'tank');
+      if (this.opacity === 0){
+        system.removeObject(this.id,'obj');
         return;
       }
     }
@@ -48,6 +51,8 @@ function Tank(){
       this.guns[i].animate();
     }
     this.showRadius -= (this.showRadius - this.radius) / 3;
+
+    this.imRotate = this.rotate;
   }
   this.setName = function (name){
     this.name = name;
@@ -74,19 +79,22 @@ function Tank(){
     this.bodyVertex = t.bodyVertex;
     this.upgradeTanks = t.upgradeTanks;
   }
-  this.dead = function(){
-    this.isDead = true;
-    this.health = 0;
+  this.setDead = function(dead){
+    this.isDead = dead;
   }
   this.hit = function(){
     this.hitTime=0.1;
   }
+  this.gunAnime = function(gun){
+    if (gun<this.guns.length) this.guns[gun].shot();
+    else if (gun<this.guns.length+this.afterGuns.length) this.afterGuns[gun-this.guns.length].shot();
+  }
   this.setCanvasSize = function(camera){
     let xx = ((this.x - this.dx - camera.x) * camera.z) - Math.floor((this.x - this.dx - camera.x) * camera.z);
     let yy = ((this.y - this.dy - camera.y) * camera.z) - Math.floor((this.y - this.dy - camera.y) * camera.z);
-    this.canvasSize.x = ((this.radius * 2) * camera.z);
-    this.canvasSize.y = ((this.radius * 2) * camera.z);
-    this.canvasPos = {x:(this.radius * camera.z + xx),y:(this.radius * camera.z + yy)};
+    this.canvasSize.x = ((this.radius * this.bodySize * 2) * camera.z);
+    this.canvasSize.y = ((this.radius * this.bodySize * 2) * camera.z);
+    this.canvasPos = {x:(this.radius * this.bodySize * camera.z + xx),y:(this.radius * this.bodySize * camera.z + yy)};
     for (let i=0;i<this.guns.length;i++){
       this.guns[i].setParentCanvasSize(this,camera);
     }
@@ -120,7 +128,7 @@ function Tank(){
       }
       else{
         let r = this.showRadius * this.bodySize * camera.z;
-        let dir = Math.PI / this.bodyVertex + this.rotate;
+        let dir = Math.PI / this.bodyVertex + this.imRotate;
         ctx.moveTo(this.canvasPos.x + Math.cos(dir) * r,this.canvasPos.y + Math.sin(dir) * r);
         for (let i=1;i<=this.bodyVertex;i++){
           dir += Math.PI / this.bodyVertex * 2;
@@ -152,7 +160,7 @@ function Tank(){
       }
       else{
         let r = this.showRadius * this.bodySize * camera.z;
-        let dir = Math.PI / this.bodyVertex + this.rotate;
+        let dir = Math.PI / this.bodyVertex + this.imRotate;
         this.ctx.moveTo(this.canvasPos.x + Math.cos(dir) * r,this.canvasPos.y + Math.sin(dir) * r);
         for (let i=1;i<=this.bodyVertex;i++){
           dir += Math.PI / this.bodyVertex * 2;
@@ -208,7 +216,7 @@ function Basic(){
   this.guns=[
     new Gun([[0,0],[0.42,0],[0.42,1.88],[-0.42,1.88],[-0.42, 0]],0)
   ];
-  this.tankType = "Basic";
+  this.tankType = "Tank";
 }
 Basic.prototype = new Tank();
 Basic.prototype.constructor = Basic;
@@ -623,8 +631,7 @@ function Trapper(){
   "use strict";
   Tank.apply(this, arguments);
   this.guns=[
-    new Gun([[0.42,1.193],[0.73,1.578],[-0.73,1.578],[-0.42,1.193]],0),
-    new Gun([[0.42,0],[0.42,1.193],[-0.42,1.193],[-0.42,0]],0)
+    new Gun([[0.42,0],[0.42,1.193],[0.73,1.578],[-0.73,1.578],[-0.42,1.193],[0.42,1.193],[-0.42,1.193],[-0.42,0]],0)
   ];
   this.tankType = "Trapper";
 }
@@ -638,8 +645,7 @@ function GunnerTrapper(){
   this.guns=[
     new Gun([[0,0],[0.52,0],[0.52,1.5],[0.1,1.5],[0.1, 0]],0),
     new Gun([[0,0],[-0.52,0],[-0.52,1.5],[-0.1,1.5],[-0.1, 0]],0),
-    new Gun([[0.542,1.193],[0.95,1.708],[-0.95,1.708],[-0.542,1.193]],Math.PI),
-    new Gun([[0.542,0],[0.542,1.193],[-0.542,1.193],[-0.542,0]],Math.PI)
+    new Gun([[0.542,0],[0.542,1.193],[0.95,1.708],[-0.95,1.708],[-0.542,1.193],[0.542,1.193],[-0.542,1.193],[-0.542,0]],Math.PI)
   ];
   this.tankType = "GunnerTrapper";
 }
@@ -651,8 +657,7 @@ function OverTrapper(){
   "use strict";
   Tank.apply(this, arguments);
   this.guns=[
-    new Gun([[0.42,1.193],[0.73,1.578],[-0.73,1.578],[-0.42,1.193]],0),
-    new Gun([[0.42,0],[0.42,1.193],[-0.42,1.193],[-0.42,0]],0),
+    new Gun([[0.42,0],[0.42,1.193],[0.73,1.578],[-0.73,1.578],[-0.42,1.193],[0.42,1.193],[-0.42,1.193],[-0.42,0]],0),
     new Gun([[0.43,0],[0.73,1.42],[-0.73,1.42],[-0.43,0]],Math.PI / 3 * 2),
     new Gun([[0.43,0],[0.73,1.42],[-0.73,1.42],[-0.43,0]],-Math.PI / 3 * 2)
   ];
@@ -666,8 +671,7 @@ function MegaTrapper(){
   "use strict";
   Tank.apply(this, arguments);
   this.guns=[
-    new Gun([[0.542,1.193],[0.95,1.708],[-0.95,1.708],[-0.542,1.193]],0),
-    new Gun([[0.542,0],[0.542,1.193],[-0.542,1.193],[-0.542,0]],0)
+    new Gun([[0.542,0],[0.542,1.193],[0.95,1.708],[-0.95,1.708],[-0.542,1.193],[0.542,1.193],[-0.542,1.193],[-0.542,0]],0)
   ];
   this.tankType = "MegaTrapper";
 }
@@ -679,12 +683,9 @@ function TriTrapper(){
   "use strict";
   Tank.apply(this, arguments);
   this.guns=[
-    new Gun([[0.42,1.193],[0.73,1.578],[-0.73,1.578],[-0.42,1.193]],0),
-    new Gun([[0.42,0],[0.42,1.193],[-0.42,1.193],[-0.42,0]],0),
-    new Gun([[0.42,1.193],[0.73,1.578],[-0.73,1.578],[-0.42,1.193]],Math.PI / 3 * 2),
-    new Gun([[0.42,0],[0.42,1.193],[-0.42,1.193],[-0.42,0]],Math.PI / 3 * 2),
-    new Gun([[0.42,1.193],[0.73,1.578],[-0.73,1.578],[-0.42,1.193]],-Math.PI / 3 * 2),
-    new Gun([[0.42,0],[0.42,1.193],[-0.42,1.193],[-0.42,0]],-Math.PI / 3 * 2)
+    new Gun([[0.42,0],[0.42,1.193],[0.73,1.578],[-0.73,1.578],[-0.42,1.193],[0.42,1.193],[-0.42,1.193],[-0.42,0]],0),
+    new Gun([[0.42,0],[0.42,1.193],[0.73,1.578],[-0.73,1.578],[-0.42,1.193],[0.42,1.193],[-0.42,1.193],[-0.42,0]],Math.PI / 3 * 2),
+    new Gun([[0.42,0],[0.42,1.193],[0.73,1.578],[-0.73,1.578],[-0.42,1.193],[0.42,1.193],[-0.42,1.193],[-0.42,0]],-Math.PI / 3 * 2)
   ];
   this.tankType = "TriTrapper";
 }
@@ -817,8 +818,7 @@ function AutoTrapper(){
   "use strict";
   Tank.apply(this, arguments);
   this.guns=[
-    new Gun([[0.42,1.193],[0.73,1.578],[-0.73,1.578],[-0.42,1.193]],0),
-    new Gun([[0.42,0],[0.42,1.193],[-0.42,1.193],[-0.42,0]],0)
+    new Gun([[0.42,0],[0.42,1.193],[0.73,1.578],[-0.73,1.578],[-0.42,1.193],[0.42,1.193],[-0.42,1.193],[-0.42,0]],0)
   ];
   this.afterGuns=[
     new AutoGun([0,0],0,0.5,[[0,0],[0.3,0],[0.3,1.08],[-0.3,1.08],[-0.3, 0]],0)
@@ -884,8 +884,7 @@ function TrapperDominator(){
     new Bolt(list,0),
   ];
   for (let dir=-Math.PI/4*3;dir<=Math.PI;dir+=Math.PI/4){
-    this.guns.push(new Gun([[0.21,1.193],[0.37,1.39],[-0.37,1.39],[-0.21,1.193]],dir));
-    this.guns.push(new Gun([[0.21,0],[0.21,1.193],[-0.21,1.193],[-0.21,0]],dir));
+    this.guns.push(new Gun([[0.21,0],[0.21,1.193],[0.37,1.39],[-0.37,1.39],[-0.21,1.193],[0.21,1.193],[-0.21,1.193],[-0.21,0]],dir));
   }
   this.tankType = "TrapperDominator";
 }
