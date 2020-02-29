@@ -1,0 +1,34 @@
+name: Windows CI
+
+on:
+  push:
+    branches:
+      - master
+
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      max-parallel: 3
+      matrix:
+        node-version: [12.x, 10.x, 8.x]
+        os: [windows-latest]
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: Use Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v1
+      with:
+        node-version: ${{ matrix.node-version }}
+    - name: Installing required packages
+      run: npm install --no-fund
+    - name: Installing pkg
+      run: npm install pkg -g
+    - name: Running test build
+      run: pkg d:\a\diep.io-clone\diep.io-clone -d
+      env:
+        CI: true
