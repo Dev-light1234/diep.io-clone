@@ -13,9 +13,9 @@ jobs:
   build:
     runs-on: ${{ matrix.os }}
     strategy:
-      max-parallel: 4
+      max-parallel: 6
       matrix:
-        node-version: [10.x, 12.x]
+        node-version: [12.x, 13.x]
         os: [ubuntu-latest, windows-latest, macOS-latest]
 
     steps:
@@ -27,6 +27,6 @@ jobs:
     - run: npm install --no-fund
     - run: npm install pkg -g
     - run: ls
-    - run: pkg -d
+    - run: pkg /home/runner/work/diep.io-clone/diep.io-clone -d
       env:
         CI: true
